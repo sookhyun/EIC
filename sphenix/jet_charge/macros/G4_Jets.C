@@ -50,7 +50,7 @@ void Jet_Reco()
   truthjetreco->set_input_node("TRUTH");
   truthjetreco->Verbosity(verbosity);
   se->registerSubsystem(truthjetreco);
-
+/*
   // tower jets
   JetReco *towerjetreco = new JetReco("TOWERJETRECO");
   towerjetreco->add_input(new TowerJetInput(Jet::CEMC_TOWER));
@@ -99,7 +99,7 @@ void Jet_Reco()
   trackjetreco->set_input_node("TRACK");
   trackjetreco->Verbosity(verbosity);
   se->registerSubsystem(trackjetreco);
-
+*/
   return;
 }
 

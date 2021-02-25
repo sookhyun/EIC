@@ -46,7 +46,7 @@ namespace Input
   bool PYTHIA6 = false;
   int PYTHIA6_EmbedId = 0;
 
-  bool PYTHIA8 = false;
+  bool PYTHIA8 = true;
   int PYTHIA8_EmbedId = 0;
 
   bool SARTRE = false;
@@ -195,6 +195,7 @@ void InputInit()
   }
   if (Input::PYTHIA8)
   {
+
     INPUTGENERATOR::Pythia8 = new PHPythia8();
     // see coresoftware/generators/PHPythia8 for example config
     INPUTGENERATOR::Pythia8->set_config_file(PYTHIA8::config_file);

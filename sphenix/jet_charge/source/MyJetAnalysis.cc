@@ -13,12 +13,18 @@
 
 #include <g4jets/JetMap.h>
 
+#include <TDatabasePDG.h>
 #include <TFile.h>
 #include <TH1F.h>
 #include <TH2F.h>
 #include <TString.h>
 #include <TTree.h>
 #include <TVector3.h>
+
+#include <HepMC/GenEvent.h>
+#include <HepMC/GenVertex.h>
+#include <phhepmc/PHHepMCGenEvent.h>
+#include <phhepmc/PHHepMCGenEventMap.h>
 
 #include <algorithm>
 #include <cassert>
@@ -29,7 +35,7 @@
 
 using namespace std;
 
-MyJetAnalysis::MyJetAnalysis(const std::string& recojetname, const std::string& truthjetname, const std::string& outputfilename)
+MyJetAnalysis::MyJetAnalysis(const std::string& recojetname, const std::string& truthjetname, const std::string& outputfilename,int flavor)
   : SubsysReco("MyJetAnalysis_" + recojetname + "_" + truthjetname)
   , m_recoJetName(recojetname)
   , m_truthJetName(truthjetname)
@@ -55,6 +61,7 @@ MyJetAnalysis::MyJetAnalysis(const std::string& recojetname, const std::string& 
   , m_truthE(numeric_limits<float>::signaling_NaN())
   , m_truthPt(numeric_limits<float>::signaling_NaN())
   , m_nMatchedTrack(-1)
+  , m_flavor(flavor)
 {
   m_trackdR.fill(numeric_limits<float>::signaling_NaN());
   m_trackpT.fill(numeric_limits<float>::signaling_NaN());
@@ -142,8 +149,8 @@ int MyJetAnalysis::End(PHCompositeNode* topNode)
 
 int MyJetAnalysis::InitRun(PHCompositeNode* topNode)
 {
-  m_jetEvalStack = shared_ptr<JetEvalStack>(new JetEvalStack(topNode, m_recoJetName, m_truthJetName));
-  m_jetEvalStack->get_stvx_eval_stack()->set_use_initial_vertex(initial_vertex);
+//  m_jetEvalStack = shared_ptr<JetEvalStack>(new JetEvalStack(topNode, m_recoJetName, m_truthJetName));
+//  m_jetEvalStack->get_stvx_eval_stack()->set_use_initial_vertex(initial_vertex);
   return Fun4AllReturnCodes::EVENT_OK;
 }
 
@@ -152,6 +159,72 @@ int MyJetAnalysis::process_event(PHCompositeNode* topNode)
   if (Verbosity() >= MyJetAnalysis::VERBOSITY_SOME)
     cout << "MyJetAnalysis::process_event() entered" << endl;
 
+  PHHepMCGenEventMap* geneventmap = findNode::getClass<PHHepMCGenEventMap>(topNode, "PHHepMCGenEventMap");
+  if (!geneventmap)
+  {
+    std::cout << PHWHERE << " - Fatal error - missing node PHHepMCGenEventMap" << std::endl;
+    return Fun4AllReturnCodes::ABORTRUN;
+  }
+
+  int _embedding_id=1;
+  PHHepMCGenEvent* genevt = geneventmap->get(_embedding_id);
+  if (!genevt)
+  {
+    std::cout << PHWHERE << " - Fatal error - node PHHepMCGenEventMap missing subevent with embedding ID " << _embedding_id;
+    std::cout << ". Print PHHepMCGenEventMap:";
+    geneventmap->identify();
+    return Fun4AllReturnCodes::ABORTRUN;
+  }
+
+  HepMC::GenEvent* theEvent = genevt->getEvent();
+
+  JetMap* truth_jets = findNode::getClass<JetMap>(topNode, m_truthJetName);
+  if (!truth_jets)
+  {
+    std::cout << PHWHERE << " - Fatal error - node " << m_truthJetName << " JetMap missing." << std::endl;
+    return Fun4AllReturnCodes::ABORTRUN;
+  }
+  const double jet_radius = truth_jets->get_par();
+  cout<<"jet radius "<<jet_radius<<endl;
+  int ijet_t = 0;
+//  bool pass_event = false;
+  for (JetMap::Iter iter = truth_jets->begin(); iter != truth_jets->end();
+       ++iter)
+  {
+    Jet* this_jet = iter->second;
+/*
+    float this_pt = this_jet->get_pt();
+    float this_eta = this_jet->get_eta();
+
+    if (this_pt < 10 || fabs(this_eta) > 5)
+      continue;
+
+    //_h2all->Fill(this_jet->get_pt(), this_eta);
+
+    if (this_pt > _pt_min && this_pt < _pt_max && (this_eta) > _eta_min && (this_eta) < _eta_max)
+    {
+//      pass_event = true;
+      //_h2->Fill(this_jet->get_pt(), this_eta);
+      //if (Verbosity() >= HFJetTruthTrigger::VERBOSITY_MORE)
+        this_jet->identify();
+    }
+    else
+    {
+      continue;
+    }
+*/
+    const int jet_flavor = parton_tagging(this_jet, theEvent, jet_radius);
+    cout<<"jet flavor "<<jet_flavor<<endl;
+    
+    if (abs(jet_flavor) == m_flavor)
+    {
+      //pass_event = true;
+    }
+
+    ijet_t++;
+  }
+
+/*
   m_jetEvalStack->next_event(topNode);
   JetRecoEval* recoeval = m_jetEvalStack->get_reco_eval();
   ++m_event;
@@ -268,6 +341,88 @@ int MyJetAnalysis::process_event(PHCompositeNode* topNode)
 
     m_T->Fill();
   }  //   for (JetMap::Iter iter = jets->begin(); iter != jets->end(); ++iter)
-
+*/
   return Fun4AllReturnCodes::EVENT_OK;
 }
+
+int MyJetAnalysis::parton_tagging(Jet* this_jet, HepMC::GenEvent* theEvent,
+                                      const double match_radius)
+{
+  float this_pt = this_jet->get_pt();
+  float this_phi = this_jet->get_phi();
+  float this_eta = this_jet->get_eta();
+
+  int jet_flavor = 0;
+  double jet_parton_zt = 0;
+
+  //std::cout << " truth jet #" << ijet_t << ", pt / eta / phi = " << this_pt << " / " << this_eta << " / " << this_phi << ", checking flavor" << std::endl;
+
+  //TODO: lack taggign scheme of gluon splitting -> QQ_bar
+  for (HepMC::GenEvent::particle_const_iterator p = theEvent->particles_begin();
+       p != theEvent->particles_end(); ++p)
+  {
+    float dR = deltaR((*p)->momentum().pseudoRapidity(), this_eta,
+                      (*p)->momentum().phi(), this_phi);
+    if (dR > match_radius)
+      continue;
+
+    int pidabs = abs((*p)->pdg_id());
+    const double zt = (*p)->momentum().perp() / this_pt;
+
+    if (pidabs == TDatabasePDG::Instance()->GetParticle("u")->PdgCode()      //
+        or pidabs == TDatabasePDG::Instance()->GetParticle("d")->PdgCode()   //
+        or pidabs == TDatabasePDG::Instance()->GetParticle("s")->PdgCode())  // handle heavy quarks only. All other favor tagged as default 0
+    {
+      if (pidabs > abs(jet_flavor))  // heavy quark found
+      {
+        jet_parton_zt = zt;
+        jet_flavor = (*p)->pdg_id();
+      }
+      else if (pidabs == abs(jet_flavor))  // same quark mass. next compare zt
+      {
+        if (zt > jet_parton_zt)
+        {
+          jet_parton_zt = zt;
+          jet_flavor = (*p)->pdg_id();
+        }
+      }
+
+      if (pidabs == TDatabasePDG::Instance()->GetParticle("b")->PdgCode())
+      {
+        if (Verbosity() >= MyJetAnalysis::VERBOSITY_MORE)
+          std::cout << __PRETTY_FUNCTION__
+                    << " --BOTTOM--> pt / eta / phi = "
+                    << (*p)->momentum().perp() << " / "
+                    << (*p)->momentum().pseudoRapidity() << " / "
+                    << (*p)->momentum().phi() << std::endl;
+      }
+      else if (pidabs == TDatabasePDG::Instance()->GetParticle("c")->PdgCode())
+      {
+        if (Verbosity() >= MyJetAnalysis::VERBOSITY_MORE)
+          std::cout << __PRETTY_FUNCTION__
+                    << " --CHARM --> pt / eta / phi = "
+                    << (*p)->momentum().perp() << " / "
+                    << (*p)->momentum().pseudoRapidity() << " / "
+                    << (*p)->momentum().phi() << std::endl;
+      }
+    }
+  }  //       for (HepMC::GenEvent::particle_const_iterator p =
+
+  if (abs(jet_flavor) == TDatabasePDG::Instance()->GetParticle("b")->PdgCode())
+  {
+    //_h2_b->Fill(this_jet->get_pt(), this_eta);
+  }
+  else if (abs(jet_flavor) == TDatabasePDG::Instance()->GetParticle("c")->PdgCode())
+  {
+    //_h2_c->Fill(this_jet->get_pt(), this_eta);
+  }
+
+  //this_jet->set_property(static_cast<Jet::PROPERTY>(prop_JetPartonFlavor),jet_flavor);
+  //this_jet->set_property(static_cast<Jet::PROPERTY>(prop_JetPartonZT),jet_parton_zt);
+  //          this_jet->identify();
+
+  return jet_flavor;
+}
+
+
+

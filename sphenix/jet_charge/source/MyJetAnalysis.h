@@ -2,7 +2,7 @@
 #define MYJETANALYSIS_H
 
 #include <fun4all/SubsysReco.h>
-
+#include <cmath>
 #include <memory>
 #include <string>
 #include <utility>  // std::pair, std::make_pair
@@ -10,9 +10,14 @@
 #include <array>
 
 class PHCompositeNode;
+class Jet;
 class JetEvalStack;
 class TTree;
 class TH1;
+namespace HepMC
+{
+  class GenEvent;
+}
 
 /// \class MyJetAnalysis
 class MyJetAnalysis : public SubsysReco
@@ -21,7 +26,8 @@ class MyJetAnalysis : public SubsysReco
   MyJetAnalysis(
       const std::string &recojetname = "AntiKt_Tower_r04",
       const std::string &truthjetname = "AntiKt_Truth_r04",
-      const std::string &outputfilename = "myjetanalysis.root");
+      const std::string &outputfilename = "myjetanalysis.root",
+      int flavor = 3);
 
   virtual ~MyJetAnalysis();
 
@@ -45,7 +51,74 @@ class MyJetAnalysis : public SubsysReco
   int process_event(PHCompositeNode *topNode);
   int End(PHCompositeNode *topNode);
 
+
+  float
+  deltaR(float eta1, float eta2, float phi1, float phi2)
+  {
+
+    float deta = eta1 - eta2;
+    float dphi = phi1 - phi2;
+    if (dphi > +3.14159)
+      dphi -= 2 * 3.14159;
+    if (dphi < -3.14159)
+      dphi += 2 * 3.14159;
+
+    return sqrt(pow(deta, 2) + pow(dphi, 2));
+
+  }
+
+  double
+  get_eta_max() const
+  {
+    return _eta_max;
+  }
+
+  void
+  set_eta_max(double etaMax)
+  {
+    _eta_max = etaMax;
+  }
+
+  double
+  get_eta_min() const
+  {
+    return _eta_min;
+  }
+
+  void
+  set_eta_min(double etaMin)
+  {
+    _eta_min = etaMin;
+  }
+
+  double
+  get_pt_max() const
+  {
+    return _pt_max;
+  }
+
+  void
+  set_pt_max(double ptMax)
+  {
+    _pt_max = ptMax;
+  }
+
+  double
+  get_pt_min() const
+  {
+    return _pt_min;
+  }
+
+  void
+  set_pt_min(double ptMin)
+  {
+    _pt_min = ptMin;
+  }
+
  private:
+  //! tag jet flavor by parton matching, like PRL 113, 132301 (2014)
+  int
+  parton_tagging(Jet * jet, HepMC::GenEvent*, const double match_radius);
   //! cache the jet evaluation modules
   std::shared_ptr<JetEvalStack> m_jetEvalStack;
 
@@ -90,6 +163,16 @@ class MyJetAnalysis : public SubsysReco
 
   //! number of matched tracks
   int m_nMatchedTrack;
+
+  int m_flavor;
+  int _maxevent;
+
+  double _pt_min;
+  double _pt_max;
+
+  double _eta_min;
+  double _eta_max;
+
 
   enum
   {
