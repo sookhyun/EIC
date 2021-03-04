@@ -3,6 +3,7 @@
 #include <fun4all/Fun4AllReturnCodes.h>
 #include <fun4all/Fun4AllServer.h>
 #include <fun4all/PHTFileServer.h>
+#include <g4main/PHG4Particle.h>
 
 #include <phool/PHCompositeNode.h>
 #include <phool/getClass.h>
@@ -94,42 +95,43 @@ int MyJetAnalysis::Init(PHCompositeNode* topNode)
 
   //Trees
   m_T = new TTree("T", "MyJetAnalysis Tree");
-
-  //      int m_event;
+  // parton
+  m_T->Branch("process_id",&m_process_id,"process_id/I");
+  m_T->Branch("parton_id1",&m_parton_id1,"parton_id1/I");
+  m_T->Branch("parton_id2",&m_parton_id2,"parton_id2/I");
+  m_T->Branch("x1", &m_x1,"x1/F");
+  m_T->Branch("x2", &m_x2,"x2/F");
+  
+  // reconstructed jets
   m_T->Branch("m_event", &m_event, "event/I");
-  //      int m_id;
   m_T->Branch("id", &m_id, "id/I");
-  //      int m_nComponent;
   m_T->Branch("nComponent", &m_nComponent, "nComponent/I");
-  //      float m_eta;
   m_T->Branch("eta", &m_eta, "eta/F");
-  //      float m_phi;
   m_T->Branch("phi", &m_phi, "phi/F");
-  //      float m_e;
   m_T->Branch("e", &m_e, "e/F");
-  //      float m_pt;
   m_T->Branch("pt", &m_pt, "pt/F");
-  //
-  //      int m_truthID;
+  // truth jets
   m_T->Branch("truthID", &m_truthID, "truthID/I");
-  //      int m_truthNComponent;
   m_T->Branch("truthNComponent", &m_truthNComponent, "truthNComponent/I");
-  //      float m_truthEta;
   m_T->Branch("truthEta", &m_truthEta, "truthEta/F");
-  //      float m_truthPhi;
   m_T->Branch("truthPhi", &m_truthPhi, "truthPhi/F");
-  //      float m_truthE;
   m_T->Branch("truthE", &m_truthE, "truthE/F");
-  //      float m_truthPt;
   m_T->Branch("truthPt", &m_truthPt, "truthPt/F");
-  //
+  // particle level information
+  m_T->Branch("nTruthConstituents", &m_nTruthConstituents, "nTruthConstituents/I");
+  m_T->Branch("truth_part_px", m_truth_part_px.data(), "truth_part_px[nTruthConstituents]/F");
+  m_T->Branch("truth_part_py", m_truth_part_py.data(), "truth_part_py[nTruthConstituents]/F");
+  m_T->Branch("truth_part_pz", m_truth_part_pz.data(), "truth_part_pz[nTruthConstituents]/F");
+  m_T->Branch("truth_part_e", m_truth_part_e.data(), "truth_part_e[nTruthConstituents]/F");
+  m_T->Branch("truth_part_pid", m_truth_part_pid.data(), "truth_part_pid[nTruthConstituents]/I");
+
   //      //! number of matched tracks
   //      int m_nMatchedTrack;
   m_T->Branch("nMatchedTrack", &m_nMatchedTrack, "nMatchedTrack/I");
   //      std::array<float, kMaxMatchedTrack> m_trackdR;
-  m_T->Branch("id", m_trackdR.data(), "trackdR[nMatchedTrack]/F");
+  m_T->Branch("trackdR", m_trackdR.data(), "trackdR[nMatchedTrack]/F");
   //      std::array<float, kMaxMatchedTrack> m_trackpT;
-  m_T->Branch("id", m_trackpT.data(), "trackpT[nMatchedTrack]/F");
+  m_T->Branch("trackpT", m_trackpT.data(), "trackpT[nMatchedTrack]/F");
 
   return Fun4AllReturnCodes::EVENT_OK;
 }
@@ -159,6 +161,10 @@ int MyJetAnalysis::process_event(PHCompositeNode* topNode)
   if (Verbosity() >= MyJetAnalysis::VERBOSITY_SOME)
     cout << "MyJetAnalysis::process_event() entered" << endl;
 
+
+  ////////////////
+  // Get nodes
+  ////////////////
   PHHepMCGenEventMap* geneventmap = findNode::getClass<PHHepMCGenEventMap>(topNode, "PHHepMCGenEventMap");
   if (!geneventmap)
   {
@@ -176,7 +182,15 @@ int MyJetAnalysis::process_event(PHCompositeNode* topNode)
     return Fun4AllReturnCodes::ABORTRUN;
   }
 
-  HepMC::GenEvent* theEvent = genevt->getEvent();
+  HepMC::GenEvent* truthevent = genevt->getEvent();
+  if (!truthevent)
+  {
+    cout << PHWHERE << "no evt pointer under phhepmvgenevent found " << endl;
+    return 0;
+  }
+
+  JetEvalStack *_jetevalstack = new JetEvalStack(topNode, m_truthJetName.c_str(), m_truthJetName.c_str());
+  JetTruthEval *trutheval = _jetevalstack->get_truth_eval();
 
   JetMap* truth_jets = findNode::getClass<JetMap>(topNode, m_truthJetName);
   if (!truth_jets)
@@ -188,42 +202,91 @@ int MyJetAnalysis::process_event(PHCompositeNode* topNode)
   cout<<"jet radius "<<jet_radius<<endl;
   int ijet_t = 0;
 //  bool pass_event = false;
+
+  ////////////////   
+  // Parton info
+  ////////////////
+  HepMC::PdfInfo *pdfinfo = truthevent->pdf_info();
+  m_process_id = truthevent->signal_process_id();
+  m_parton_id1 = pdfinfo->id1();
+  m_parton_id2 = pdfinfo->id2();
+  m_x1 = pdfinfo->x1();
+  m_x2 = pdfinfo->x2();
+
+  cout<<"process " <<  m_process_id << " x1 "<<m_x1<<" x2 "<<m_x2<<" partid1 "<<  m_parton_id1 <<  " partid2 "<< m_parton_id1<<endl;
+  cout<<"# of jets "<<truth_jets->size()<<endl;
+  m_nTruthConstituents =0;
   for (JetMap::Iter iter = truth_jets->begin(); iter != truth_jets->end();
        ++iter)
   {
+    cout<<"jet "<<ijet_t<<endl;
     Jet* this_jet = iter->second;
-/*
-    float this_pt = this_jet->get_pt();
-    float this_eta = this_jet->get_eta();
+    ///////////////////
+    // jet level info
+    ///////////////////
+    m_truthID = this_jet->get_id();
+    m_truthNComponent = this_jet->size_comp();
+    m_truthEta = this_jet->get_eta();
+    m_truthPhi = this_jet->get_phi();
+    m_truthE = this_jet->get_e();
+    m_truthPt = this_jet->get_pt();
 
-    if (this_pt < 10 || fabs(this_eta) > 5)
+    ////////////////////////
+    // particle level info
+    ////////////////////////
+    std::set<PHG4Particle *> truthjetcomp =
+        trutheval->all_truth_particles(this_jet);
+
+    for (std::set<PHG4Particle *>::iterator iter2 = truthjetcomp.begin();
+         iter2 != truthjetcomp.end();
+         ++iter2)
+    {
+      PHG4Particle *truthpart = *iter2;
+      if (!truthpart)
+      {
+        cout << "no truth particles in the jet??" << endl;
+        break;
+      }
+
+	m_truth_part_px[m_nTruthConstituents] = truthpart->get_px(); 
+        m_truth_part_py[m_nTruthConstituents] = truthpart->get_py();
+        m_truth_part_pz[m_nTruthConstituents] = truthpart->get_pz();
+        m_truth_part_e[m_nTruthConstituents] = truthpart->get_e();
+        m_truth_part_pid[m_nTruthConstituents] = truthpart->get_pid();
+      m_nTruthConstituents++;
+    }
+    cout<<"nTruthConstituents " <<m_nTruthConstituents<<endl;    
+
+
+/*
+
+    if (m_pt < 10 || fabs(m_eta) > 5)
       continue;
 
-    //_h2all->Fill(this_jet->get_pt(), this_eta);
 
-    if (this_pt > _pt_min && this_pt < _pt_max && (this_eta) > _eta_min && (this_eta) < _eta_max)
+    if (m_pt > m_ptRange.first && m_pt < m_ptRange.second && (m_eta) > m_etaRanga.first && (m_eta) < m_etaRange.second)
     {
-//      pass_event = true;
-      //_h2->Fill(this_jet->get_pt(), this_eta);
-      //if (Verbosity() >= HFJetTruthTrigger::VERBOSITY_MORE)
-        this_jet->identify();
+      pass_event = true;
     }
     else
     {
       continue;
     }
 */
-    const int jet_flavor = parton_tagging(this_jet, theEvent, jet_radius);
+    const int jet_flavor = parton_tagging(this_jet, truthevent, jet_radius);
     cout<<"jet flavor "<<jet_flavor<<endl;
     
     if (abs(jet_flavor) == m_flavor)
     {
-      //pass_event = true;
     }
 
     ijet_t++;
   }
-
+  //////////////
+  // Fill tree
+  //////////////
+  m_T->Fill();
+  cout<<"tree filled" <<endl;
 /*
   m_jetEvalStack->next_event(topNode);
   JetRecoEval* recoeval = m_jetEvalStack->get_reco_eval();
@@ -339,9 +402,9 @@ int MyJetAnalysis::process_event(PHCompositeNode* topNode)
 
     }  //    for (SvtxTrackMap::Iter iter = trackmap->begin();
 
-    m_T->Fill();
   }  //   for (JetMap::Iter iter = jets->begin(); iter != jets->end(); ++iter)
 */
+
   return Fun4AllReturnCodes::EVENT_OK;
 }
 
@@ -371,7 +434,8 @@ int MyJetAnalysis::parton_tagging(Jet* this_jet, HepMC::GenEvent* theEvent,
 
     if (pidabs == TDatabasePDG::Instance()->GetParticle("u")->PdgCode()      //
         or pidabs == TDatabasePDG::Instance()->GetParticle("d")->PdgCode()   //
-        or pidabs == TDatabasePDG::Instance()->GetParticle("s")->PdgCode())  // handle heavy quarks only. All other favor tagged as default 0
+        or pidabs == TDatabasePDG::Instance()->GetParticle("s")->PdgCode()
+ 	or pidabs == TDatabasePDG::Instance()->GetParticle("g")->PdgCode())  // handle heavy quarks only. All other favor tagged as default 0
     {
       if (pidabs > abs(jet_flavor))  // heavy quark found
       {

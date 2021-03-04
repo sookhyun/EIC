@@ -154,8 +154,15 @@ class MyJetAnalysis : public SubsysReco
   float m_e;
   float m_pt;
 
+  int m_process_id;
+  int m_parton_id1;
+  int m_parton_id2;
+  float m_x1;
+  float m_x2;
+
   int m_truthID;
   int m_truthNComponent;
+  int m_nTruthConstituents;
   float m_truthEta;
   float m_truthPhi;
   float m_truthE;
@@ -179,8 +186,14 @@ class MyJetAnalysis : public SubsysReco
     //! max number of tracks
     kMaxMatchedTrack = 1000
   };
+
   std::array<float, kMaxMatchedTrack> m_trackdR;
   std::array<float, kMaxMatchedTrack> m_trackpT;
+  std::array<float, kMaxMatchedTrack> m_truth_part_px;  
+  std::array<float, kMaxMatchedTrack> m_truth_part_py;
+  std::array<float, kMaxMatchedTrack> m_truth_part_pz;
+  std::array<float, kMaxMatchedTrack> m_truth_part_e;
+  std::array<float, kMaxMatchedTrack> m_truth_part_pid;
 };
 
 #endif  // MYJETANALYSIS_H
