@@ -10,7 +10,7 @@
 
 #include <g4eval/JetEvalStack.h>
 
-#include <trackbase_historic/SvtxTrackMap.h>
+//#include <trackbase_historic/SvtxTrackMap.h>
 
 #include <g4jets/JetMap.h>
 
@@ -44,9 +44,6 @@ MyJetAnalysis::MyJetAnalysis(const std::string& recojetname, const std::string& 
   , m_etaRange(-1, 1)
   , m_ptRange(5, 100)
   , m_trackJetMatchingRadius(.7)
-  , m_hInclusiveE(nullptr)
-  , m_hInclusiveEta(nullptr)
-  , m_hInclusivePhi(nullptr)
   , m_T(nullptr)
   , m_event(-1)
   , m_id(-1)
@@ -63,6 +60,7 @@ MyJetAnalysis::MyJetAnalysis(const std::string& recojetname, const std::string& 
   , m_truthPt(numeric_limits<float>::signaling_NaN())
   , m_nMatchedTrack(-1)
   , m_flavor(flavor)
+  , verbosity(0)
 {
   m_trackdR.fill(numeric_limits<float>::signaling_NaN());
   m_trackpT.fill(numeric_limits<float>::signaling_NaN());
@@ -79,21 +77,6 @@ int MyJetAnalysis::Init(PHCompositeNode* topNode)
 
   PHTFileServer::get().open(m_outputFileName, "RECREATE");
 
-  // Histograms
-  m_hInclusiveE = new TH1F(
-      "hInclusive_E",  //
-      TString(m_recoJetName) + " inclusive jet E;Total jet energy (GeV)", 100, 0, 100);
-
-  m_hInclusiveEta =
-      new TH1F(
-          "hInclusive_eta",  //
-          TString(m_recoJetName) + " inclusive jet #eta;#eta;Jet energy density", 50, -1, 1);
-  m_hInclusivePhi =
-      new TH1F(
-          "hInclusive_phi",  //
-          TString(m_recoJetName) + " inclusive jet #phi;#phi;Jet energy density", 50, -M_PI, M_PI);
-
-  //Trees
   m_T = new TTree("T", "MyJetAnalysis Tree");
   // parton
   m_T->Branch("process_id",&m_process_id,"process_id/I");
@@ -101,7 +84,8 @@ int MyJetAnalysis::Init(PHCompositeNode* topNode)
   m_T->Branch("parton_id2",&m_parton_id2,"parton_id2/I");
   m_T->Branch("x1", &m_x1,"x1/F");
   m_T->Branch("x2", &m_x2,"x2/F");
-  
+  m_T->Branch("parton_flavor", &m_flavor,"parton_flavor/I");
+ 
   // reconstructed jets
   m_T->Branch("m_event", &m_event, "event/I");
   m_T->Branch("id", &m_id, "id/I");
@@ -123,7 +107,9 @@ int MyJetAnalysis::Init(PHCompositeNode* topNode)
   m_T->Branch("truth_part_py", m_truth_part_py.data(), "truth_part_py[nTruthConstituents]/F");
   m_T->Branch("truth_part_pz", m_truth_part_pz.data(), "truth_part_pz[nTruthConstituents]/F");
   m_T->Branch("truth_part_e", m_truth_part_e.data(), "truth_part_e[nTruthConstituents]/F");
+  m_T->Branch("truth_part_phi", m_truth_part_phi.data(), "truth_part_phi[nTruthConstituents]/F");
   m_T->Branch("truth_part_pid", m_truth_part_pid.data(), "truth_part_pid[nTruthConstituents]/I");
+  m_T->Branch("truth_part_qe", m_truth_part_qe.data(), "truth_part_qe[nTruthConstituents]/I");
 
   //      //! number of matched tracks
   //      int m_nMatchedTrack;
@@ -140,10 +126,6 @@ int MyJetAnalysis::End(PHCompositeNode* topNode)
 {
   cout << "MyJetAnalysis::End - Output to " << m_outputFileName << endl;
   PHTFileServer::get().cd(m_outputFileName);
-
-  m_hInclusiveE->Write();
-  m_hInclusiveEta->Write();
-  m_hInclusivePhi->Write();
   m_T->Write();
 
   return Fun4AllReturnCodes::EVENT_OK;
@@ -160,7 +142,6 @@ int MyJetAnalysis::process_event(PHCompositeNode* topNode)
 {
   if (Verbosity() >= MyJetAnalysis::VERBOSITY_SOME)
     cout << "MyJetAnalysis::process_event() entered" << endl;
-
 
   ////////////////
   // Get nodes
@@ -199,10 +180,10 @@ int MyJetAnalysis::process_event(PHCompositeNode* topNode)
     return Fun4AllReturnCodes::ABORTRUN;
   }
   const double jet_radius = truth_jets->get_par();
-  cout<<"jet radius "<<jet_radius<<endl;
+  if(verbosity>10)cout<<"jet radius "<<jet_radius<<endl;
   int ijet_t = 0;
 //  bool pass_event = false;
-
+ ++m_event;
   ////////////////   
   // Parton info
   ////////////////
@@ -212,28 +193,44 @@ int MyJetAnalysis::process_event(PHCompositeNode* topNode)
   m_parton_id2 = pdfinfo->id2();
   m_x1 = pdfinfo->x1();
   m_x2 = pdfinfo->x2();
+  
 
-  cout<<"process " <<  m_process_id << " x1 "<<m_x1<<" x2 "<<m_x2<<" partid1 "<<  m_parton_id1 <<  " partid2 "<< m_parton_id1<<endl;
-  cout<<"# of jets "<<truth_jets->size()<<endl;
+  if(verbosity>10)cout<<"process " <<  m_process_id << " x1 "<<m_x1<<" x2 "<<m_x2<<" partid1 "<<  m_parton_id1 <<  " partid2 "<< m_parton_id2<<endl;
+  if(verbosity>10)cout<<"# of jets "<<truth_jets->size()<<endl;
+  int njets = truth_jets->size();
   m_nTruthConstituents =0;
   for (JetMap::Iter iter = truth_jets->begin(); iter != truth_jets->end();
        ++iter)
   {
-    cout<<"jet "<<ijet_t<<endl;
+    if(ijet_t < njets-2){     ijet_t++; continue;	}  
+    if(verbosity>10)cout<<"jet # "<<ijet_t<<endl;
     Jet* this_jet = iter->second;
+    if(!this_jet)continue;
     ///////////////////
     // jet level info
     ///////////////////
-    m_truthID = this_jet->get_id();
+    int jetid= -99;
+    if(ijet_t == (njets-1)) jetid = 0;//leading jet
+    else if(ijet_t == (njets-2)) jetid=1;//subleading jet
+    m_truthID = jetid;
     m_truthNComponent = this_jet->size_comp();
     m_truthEta = this_jet->get_eta();
     m_truthPhi = this_jet->get_phi();
     m_truthE = this_jet->get_e();
     m_truthPt = this_jet->get_pt();
-
-    ////////////////////////
-    // particle level info
-    ////////////////////////
+    if(verbosity>10) cout<<" jet pt "<<m_truthPt<<endl;
+    if(jetid==1){
+    const int jet_flavor = parton_tagging(this_jet, truthevent, jet_radius+0.5);
+    m_flavor =  jet_flavor;
+    if(verbosity>10 ) cout<<" jet flavor " << jet_flavor<<endl;
+    }
+  ////////////////////////
+  // particle level info
+  ////////////////////////
+  m_nTruthConstituents =0;
+  int method =2;
+  if(method==1)
+  {
     std::set<PHG4Particle *> truthjetcomp =
         trutheval->all_truth_particles(this_jet);
 
@@ -247,23 +244,20 @@ int MyJetAnalysis::process_event(PHCompositeNode* topNode)
         cout << "no truth particles in the jet??" << endl;
         break;
       }
-
 	m_truth_part_px[m_nTruthConstituents] = truthpart->get_px(); 
         m_truth_part_py[m_nTruthConstituents] = truthpart->get_py();
         m_truth_part_pz[m_nTruthConstituents] = truthpart->get_pz();
         m_truth_part_e[m_nTruthConstituents] = truthpart->get_e();
         m_truth_part_pid[m_nTruthConstituents] = truthpart->get_pid();
-      m_nTruthConstituents++;
-    }
-    cout<<"nTruthConstituents " <<m_nTruthConstituents<<endl;    
-
+	float charge = TDatabasePDG::Instance()->GetParticle(m_truth_part_pid[m_nTruthConstituents])->Charge();
+	m_truth_part_qe[m_nTruthConstituents] = charge;
+	m_nTruthConstituents++;
+	if(verbosity>10) cout<<"m_truth_part_pid "<<m_truth_part_pid[m_nTruthConstituents]<<endl;
+    }// for particles
 
 /*
-
     if (m_pt < 10 || fabs(m_eta) > 5)
       continue;
-
-
     if (m_pt > m_ptRange.first && m_pt < m_ptRange.second && (m_eta) > m_etaRanga.first && (m_eta) < m_etaRange.second)
     {
       pass_event = true;
@@ -273,25 +267,48 @@ int MyJetAnalysis::process_event(PHCompositeNode* topNode)
       continue;
     }
 */
-    const int jet_flavor = parton_tagging(this_jet, truthevent, jet_radius);
-    cout<<"jet flavor "<<jet_flavor<<endl;
-    
-    if (abs(jet_flavor) == m_flavor)
-    {
-    }
+    m_T->Fill();
+    ijet_t++;
+  }//method 1
+  else if(method==2)
+  {
 
+   for (HepMC::GenEvent::particle_const_iterator p = truthevent->particles_begin();
+       p != truthevent->particles_end(); ++p)
+   {
+    //https://rivet.hepforge.org/code/hepmc.bak/classHepMC_1_1GenParticle.html	  
+    HepMC::GenParticle* gpart = (*p);
+	    
+    float dR = delta_r(gpart->momentum().pseudoRapidity(), m_truthEta,
+                      gpart->momentum().phi(), m_truthPhi);
+
+    //http://home.thep.lu.se/~torbjorn/pythia81html/ParticleProperties.html    
+    int status = gpart->status();
+    //if ((status==23 || status==33) && dR < 1.0) cout<<"outgoing parton "<< gpart->pdg_id()<<" status "<<status<<endl;
+    if (status !=1) continue; // only FS particles
+    if (dR > jet_radius) continue;
+    m_truth_part_px[m_nTruthConstituents] = gpart->momentum().px();
+        m_truth_part_py[m_nTruthConstituents] = gpart->momentum().py();
+        m_truth_part_pz[m_nTruthConstituents] = gpart->momentum().pz();
+        m_truth_part_e[m_nTruthConstituents] = gpart->momentum().e();
+	m_truth_part_phi[m_nTruthConstituents] = gpart->momentum().phi();
+	m_truth_part_pid[m_nTruthConstituents] = gpart->pdg_id();
+        float charge = TDatabasePDG::Instance()->GetParticle(m_truth_part_pid[m_nTruthConstituents])->Charge();
+        m_truth_part_qe[m_nTruthConstituents] = charge;
+        m_nTruthConstituents++;
+        if(verbosity>10) cout<<"  m_truth_part_pid "<<m_truth_part_pid[m_nTruthConstituents]<<endl;    
+   }  //       for (HepMC::GenEvent::particle_const_iterator p =  
+    m_T->Fill();
     ijet_t++;
   }
-  //////////////
-  // Fill tree
-  //////////////
-  m_T->Fill();
-  cout<<"tree filled" <<endl;
+  if(verbosity>10) cout<<"---   nTruthConstituents " <<m_nTruthConstituents<<" m_truthNComponent"<<m_truthNComponent <<endl;
+  }  //   for (JetMap::Iter iter = jets->begin(); iter != jets->end(); ++iter)
+  
+// reco tree
 /*
   m_jetEvalStack->next_event(topNode);
   JetRecoEval* recoeval = m_jetEvalStack->get_reco_eval();
   ++m_event;
-
   // interface to jets
   JetMap* jets = findNode::getClass<JetMap>(topNode, m_recoJetName);
   if (!jets)
@@ -301,7 +318,6 @@ int MyJetAnalysis::process_event(PHCompositeNode* topNode)
         << m_recoJetName << endl;
     exit(-1);
   }
-
   // interface to tracks
   SvtxTrackMap* trackmap = findNode::getClass<SvtxTrackMap>(topNode, "SvtxTrackMap");
   if (!trackmap)
@@ -318,7 +334,6 @@ int MyJetAnalysis::process_event(PHCompositeNode* topNode)
   {
     Jet* jet = iter->second;
     assert(jet);
-
     bool eta_cut = (jet->get_eta() >= m_etaRange.first) and (jet->get_eta() <= m_etaRange.second);
     bool pt_cut = (jet->get_pt() >= m_ptRange.first) and (jet->get_pt() <= m_ptRange.second);
     if ((not eta_cut) or (not pt_cut))
@@ -332,32 +347,20 @@ int MyJetAnalysis::process_event(PHCompositeNode* topNode)
       }
       continue;
     }
-
-    // fill histograms
-    assert(m_hInclusiveE);
-    m_hInclusiveE->Fill(jet->get_e());
-    assert(m_hInclusiveEta);
-    m_hInclusiveEta->Fill(jet->get_eta());
-    assert(m_hInclusivePhi);
-    m_hInclusivePhi->Fill(jet->get_phi());
-
     // fill trees - jet spectrum
     Jet* truthjet = recoeval->max_truth_jet_by_energy(jet);
-
     m_id = jet->get_id();
     m_nComponent = jet->size_comp();
     m_eta = jet->get_eta();
     m_phi = jet->get_phi();
     m_e = jet->get_e();
     m_pt = jet->get_pt();
-
     m_truthID = -1;
     m_truthNComponent = -1;
     m_truthEta = NAN;
     m_truthPhi = NAN;
     m_truthE = NAN;
     m_truthPt = NAN;
-
     if (truthjet)
     {
       m_truthID = truthjet->get_id();
@@ -367,41 +370,31 @@ int MyJetAnalysis::process_event(PHCompositeNode* topNode)
       m_truthE = truthjet->get_e();
       m_truthPt = truthjet->get_pt();
     }
-
     // fill trees - jet track matching
     m_nMatchedTrack = 0;
-
     for (SvtxTrackMap::Iter iter = trackmap->begin();
          iter != trackmap->end();
          ++iter)
     {
       SvtxTrack* track = iter->second;
-
       TVector3 v(track->get_px(), track->get_py(), track->get_pz());
       const double dEta = v.Eta() - m_eta;
       const double dPhi = v.Phi() - m_phi;
       const double dR = sqrt(dEta * dEta + dPhi * dPhi);
-
       if (dR < m_trackJetMatchingRadius)
       {
         //matched track to jet
-
         assert(m_nMatchedTrack < kMaxMatchedTrack);
-
         m_trackdR[m_nMatchedTrack] = dR;
         m_trackpT[m_nMatchedTrack] = v.Perp();
-
         ++m_nMatchedTrack;
       }
-
       if (m_nMatchedTrack >= kMaxMatchedTrack)
       {
         cout << "MyJetAnalysis::process_event() - reached max track that matching a jet. Quit iterating tracks" << endl;
         break;
       }
-
     }  //    for (SvtxTrackMap::Iter iter = trackmap->begin();
-
   }  //   for (JetMap::Iter iter = jets->begin(); iter != jets->end(); ++iter)
 */
 
@@ -417,74 +410,59 @@ int MyJetAnalysis::parton_tagging(Jet* this_jet, HepMC::GenEvent* theEvent,
 
   int jet_flavor = 0;
   double jet_parton_zt = 0;
-
+  float dist = 999;
   //std::cout << " truth jet #" << ijet_t << ", pt / eta / phi = " << this_pt << " / " << this_eta << " / " << this_phi << ", checking flavor" << std::endl;
 
-  //TODO: lack taggign scheme of gluon splitting -> QQ_bar
   for (HepMC::GenEvent::particle_const_iterator p = theEvent->particles_begin();
        p != theEvent->particles_end(); ++p)
   {
-    float dR = deltaR((*p)->momentum().pseudoRapidity(), this_eta,
-                      (*p)->momentum().phi(), this_phi);
-    if (dR > match_radius)
-      continue;
 
+    float dR = delta_r((*p)->momentum().pseudoRapidity(), this_eta,
+                      (*p)->momentum().phi(), this_phi);
+    //if (dR > match_radius)
+      //continue;
+    int status = (*p)->status();
+    if(verbosity>10 && (status == 23 || status ==33) ) cout<<"outgoing parton "<< (*p)->pdg_id()<<" status "<<status<< " dR "<<dR<< endl;
     int pidabs = abs((*p)->pdg_id());
     const double zt = (*p)->momentum().perp() / this_pt;
 
     if (pidabs == TDatabasePDG::Instance()->GetParticle("u")->PdgCode()      //
         or pidabs == TDatabasePDG::Instance()->GetParticle("d")->PdgCode()   //
         or pidabs == TDatabasePDG::Instance()->GetParticle("s")->PdgCode()
- 	or pidabs == TDatabasePDG::Instance()->GetParticle("g")->PdgCode())  // handle heavy quarks only. All other favor tagged as default 0
+ 	or pidabs == TDatabasePDG::Instance()->GetParticle("g")->PdgCode())  // default 0
     {
-      if (pidabs > abs(jet_flavor))  // heavy quark found
+      //if (pidabs > abs(jet_flavor)) // for heavy flavor
+      //if(dR < dist && (status == 23 || status ==33)) // distance method
+      if (zt > jet_parton_zt && (status == 23 || status ==33)) // zt method
       {
+	dist = dR; 
         jet_parton_zt = zt;
         jet_flavor = (*p)->pdg_id();
       }
-      else if (pidabs == abs(jet_flavor))  // same quark mass. next compare zt
-      {
-        if (zt > jet_parton_zt)
-        {
-          jet_parton_zt = zt;
-          jet_flavor = (*p)->pdg_id();
-        }
-      }
-
-      if (pidabs == TDatabasePDG::Instance()->GetParticle("b")->PdgCode())
-      {
-        if (Verbosity() >= MyJetAnalysis::VERBOSITY_MORE)
-          std::cout << __PRETTY_FUNCTION__
-                    << " --BOTTOM--> pt / eta / phi = "
-                    << (*p)->momentum().perp() << " / "
-                    << (*p)->momentum().pseudoRapidity() << " / "
-                    << (*p)->momentum().phi() << std::endl;
-      }
-      else if (pidabs == TDatabasePDG::Instance()->GetParticle("c")->PdgCode())
-      {
-        if (Verbosity() >= MyJetAnalysis::VERBOSITY_MORE)
-          std::cout << __PRETTY_FUNCTION__
-                    << " --CHARM --> pt / eta / phi = "
-                    << (*p)->momentum().perp() << " / "
-                    << (*p)->momentum().pseudoRapidity() << " / "
-                    << (*p)->momentum().phi() << std::endl;
-      }
     }
   }  //       for (HepMC::GenEvent::particle_const_iterator p =
-
-  if (abs(jet_flavor) == TDatabasePDG::Instance()->GetParticle("b")->PdgCode())
+/*
+  if (abs(jet_flavor) == TDatabasePDG::Instance()->GetParticle("g")->PdgCode())
   {
-    //_h2_b->Fill(this_jet->get_pt(), this_eta);
+    _h2_g->Fill(this_jet->get_pt(), this_eta);
   }
-  else if (abs(jet_flavor) == TDatabasePDG::Instance()->GetParticle("c")->PdgCode())
+  else if (abs(jet_flavor) == TDatabasePDG::Instance()->GetParticle("u")->PdgCode())
   {
-    //_h2_c->Fill(this_jet->get_pt(), this_eta);
+    _h2_u->Fill(this_jet->get_pt(), this_eta);
   }
-
+  else if (abs(jet_flavor) == TDatabasePDG::Instance()->GetParticle("d")->PdgCode())
+  {
+    _h2_d->Fill(this_jet->get_pt(), this_eta);
+  }
+  else if (abs(jet_flavor) == TDatabasePDG::Instance()->GetParticle("s")->PdgCode())
+  {
+    _h2_s->Fill(this_jet->get_pt(), this_eta);
+  }  
+*/
   //this_jet->set_property(static_cast<Jet::PROPERTY>(prop_JetPartonFlavor),jet_flavor);
   //this_jet->set_property(static_cast<Jet::PROPERTY>(prop_JetPartonZT),jet_parton_zt);
   //          this_jet->identify();
-
+  if(verbosity>10)cout<<"distance "<<dist<<" zt "<<jet_parton_zt<<endl;
   return jet_flavor;
 }
 

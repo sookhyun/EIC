@@ -45,6 +45,7 @@ class MyJetAnalysis : public SubsysReco
     m_ptRange.first = low;
     m_ptRange.second = high;
   }
+  void set_verbosity(int verb){verbosity=verb;} 
   void use_initial_vertex(const bool b = true) {initial_vertex = b;}
   int Init(PHCompositeNode *topNode);
   int InitRun(PHCompositeNode *topNode);
@@ -53,7 +54,7 @@ class MyJetAnalysis : public SubsysReco
 
 
   float
-  deltaR(float eta1, float eta2, float phi1, float phi2)
+  delta_r(float eta1, float eta2, float phi1, float phi2)
   {
 
     float deta = eta1 - eta2;
@@ -138,12 +139,6 @@ class MyJetAnalysis : public SubsysReco
   //! max track-jet matching radius
   double m_trackJetMatchingRadius;
 
-  //! Output histograms
-  TH1 *m_hInclusiveE;
-  TH1 *m_hInclusiveEta;
-  TH1 *m_hInclusivePhi;
-
-  //! Output Tree variables
   TTree *m_T;
 
   int m_event;
@@ -180,7 +175,7 @@ class MyJetAnalysis : public SubsysReco
   double _eta_min;
   double _eta_max;
 
-
+  int verbosity;
   enum
   {
     //! max number of tracks
@@ -193,7 +188,9 @@ class MyJetAnalysis : public SubsysReco
   std::array<float, kMaxMatchedTrack> m_truth_part_py;
   std::array<float, kMaxMatchedTrack> m_truth_part_pz;
   std::array<float, kMaxMatchedTrack> m_truth_part_e;
-  std::array<float, kMaxMatchedTrack> m_truth_part_pid;
+  std::array<float, kMaxMatchedTrack> m_truth_part_phi;  
+  std::array<int, kMaxMatchedTrack> m_truth_part_pid;
+  std::array<float, kMaxMatchedTrack> m_truth_part_qe;
 };
 
 #endif  // MYJETANALYSIS_H
