@@ -10,6 +10,7 @@
 #include <array>
 
 class PHCompositeNode;
+class PHGenIntegral;
 class Jet;
 class JetEvalStack;
 class TTree;
@@ -27,7 +28,7 @@ class MyJetAnalysis : public SubsysReco
       const std::string &recojetname = "AntiKt_Tower_r04",
       const std::string &truthjetname = "AntiKt_Truth_r04",
       const std::string &outputfilename = "myjetanalysis.root",
-      int flavor = 3);
+      float match_dist = 99);
 
   virtual ~MyJetAnalysis();
 
@@ -117,9 +118,12 @@ class MyJetAnalysis : public SubsysReco
   }
 
  private:
+
+  PHGenIntegral* genintegral;
+
   //! tag jet flavor by parton matching, like PRL 113, 132301 (2014)
-  int
-  parton_tagging(Jet * jet, HepMC::GenEvent*, const double match_radius);
+  int parton_tagging(Jet * jet, HepMC::GenEvent*, const double match_radius);
+  bool photon_tagging(HepMC::GenEvent* theEvent);
   //! cache the jet evaluation modules
   std::shared_ptr<JetEvalStack> m_jetEvalStack;
 
@@ -138,6 +142,7 @@ class MyJetAnalysis : public SubsysReco
 
   //! max track-jet matching radius
   double m_trackJetMatchingRadius;
+  double m_intlumi;
 
   TTree *m_T;
 
@@ -167,6 +172,13 @@ class MyJetAnalysis : public SubsysReco
   int m_nMatchedTrack;
 
   int m_flavor;
+  float m_parton_eta;
+  float m_parton_phi;
+  float m_parton_zt;
+  float m_matchDist;
+  float m_photon_phi;
+  float m_photon_eta;
+  float m_photon_pt;
   int _maxevent;
 
   double _pt_min;
