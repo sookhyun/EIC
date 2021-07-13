@@ -36,7 +36,7 @@ R__LOAD_LIBRARY(libmyjetanalysis.so)
 // try inputFile = /sphenix/sim/sim01/sphnxpro/sHijing_HepMC/sHijing_0-12fm.dat
 
 int Fun4All_G4_sPHENIX(
-    const int nEvents = 100000,
+    const int nEvents = 100,
     const string &inputFile = "https://www.phenix.bnl.gov/WWW/publish/phnxbld/sPHENIX/files/sPHENIX_G4Hits_sHijing_9-11fm_00000_00010.root",
     const string &outputFile = "G4sPHENIX.root",
     const string &embed_input_file = "https://www.phenix.bnl.gov/WWW/publish/phnxbld/sPHENIX/files/sPHENIX_G4Hits_sHijing_9-11fm_00000_00010.root",
@@ -526,7 +526,7 @@ int Fun4All_G4_sPHENIX(
 
   gSystem->Load("libmyjetanalysis");
 
-  MyJetAnalysis *myJetAnalysis = new MyJetAnalysis("AntiKt_Truth_r07", "AntiKt_Truth_r07", "myjetanalysis.root");
+  MyJetAnalysis *myJetAnalysis = new MyJetAnalysis("AntiKt_Truth_r07", "AntiKt_Truth_r07", "myjetanalysis.root",99);
   myJetAnalysis->set_verbosity(0);
   // change lower pt and eta cut to make them visible using the example
   //  pythia8 file

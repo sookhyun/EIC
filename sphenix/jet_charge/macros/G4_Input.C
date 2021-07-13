@@ -282,7 +282,10 @@ void InputInit()
     INPUTGENERATOR::Pythia8 = new PHPythia8();
     // see coresoftware/generators/PHPythia8 for example config
     INPUTGENERATOR::Pythia8->set_config_file(PYTHIA8::config_file);
-std::cout<<"pythia8 cfg "<<PYTHIA8::config_file<<std::endl;
+    std::cout<<"pythia8 cfg "<<PYTHIA8::config_file<<std::endl;
+    
+    INPUTGENERATOR::Pythia8->save_integrated_luminosity(true);
+    INPUTGENERATOR::Pythia8->save_event_weight(true);
     INPUTGENERATOR::Pythia8->set_embedding_id(Input::EmbedId);
     Input::PYTHIA8_EmbedId = Input::EmbedId;
     Input::EmbedId++;
